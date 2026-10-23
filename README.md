@@ -43,8 +43,6 @@ engine/
   docs/                architecture and feature log
 ```
 
-`FixedPointArithmetic/` is an earlier standalone experiment and is not part of the build.
-
 ## License
 
 MIT
