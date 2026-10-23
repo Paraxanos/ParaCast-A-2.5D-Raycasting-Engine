@@ -12,6 +12,7 @@
 #include "render/fb.h"
 #include "render/raycast.h"
 #include "render/post/present.h"
+#include "sim/player.h"
 #include "platform/ppm.h"
 #include "platform/timer.h"
 

@@ -11,7 +11,9 @@ endif()
 
 option(ENGINE_OPENMP   "Link OpenMP (used from Phase 3 on)" OFF)
 option(ENGINE_SANITIZE "Build with ASan + UBSan"            OFF)
-option(ENGINE_TESTS    "Build the test suite"               ON)
+set(ENGINE_SDL AUTO CACHE STRING "Build the SDL2 viewer: AUTO, ON or OFF")
+set_property(CACHE ENGINE_SDL PROPERTY STRINGS AUTO ON OFF)
+option(ENGINE_TESTS   "Build the test suite"               ON)
 
 if(ENGINE_TESTS)
   enable_testing()

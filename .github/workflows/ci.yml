@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: release
+            build_type: Release
+            sanitize: "OFF"
+            sdl: "ON"
+          - name: asan-ubsan
+            build_type: Debug
+            sanitize: "ON"
+            sdl: "ON"
+          # The engine must build and pass its tests with no SDL installed at all.
+          - name: headless
+            build_type: Release
+            sanitize: "OFF"
+            sdl: "OFF"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc cmake make libsdl2-dev
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DENGINE_SANITIZE=${{ matrix.sanitize }}
+          -DENGINE_SDL=${{ matrix.sdl }}
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      # Not a timing gate (shared runners are too noisy); it checks the bench runs clean,
+      # makes no allocations in the frame loop, and reproduces the pinned run hash.
+      - name: Benchmark smoke
+        if: matrix.name == 'release'
+        run: |
+          out=$(./build/engine/paracast_bench 600)
+          echo "$out"
+          echo "$out" | grep -q "0 allocs in frame loop"
+          echo "$out" | grep -q "run hash 48b464b95d006180"
