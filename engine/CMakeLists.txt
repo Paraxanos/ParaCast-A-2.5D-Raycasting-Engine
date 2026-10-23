@@ -22,6 +22,7 @@ add_library(paracast STATIC
   src/render/fb.c
   src/render/raycast.c
   src/render/post/present.c
+  src/sim/player.c
   src/platform/ppm.c
   src/platform/timer.c)
 target_include_directories(paracast PUBLIC include src)
@@ -40,6 +41,38 @@ foreach(tool demo bench)
 endforeach()
 target_compile_definitions(paracast_bench PRIVATE
   PC_GIT_HASH="${PC_GIT_HASH}" PC_BUILD_TYPE="${CMAKE_BUILD_TYPE}")
+
+if(NOT ENGINE_SDL STREQUAL "OFF")
+  find_package(SDL2 CONFIG QUIET)
+  if(TARGET SDL2::SDL2)
+    set(PC_SDL_LIB SDL2::SDL2)
+  else()
+    find_path(SDL2_INCLUDE_DIR SDL.h PATH_SUFFIXES SDL2)
+    find_library(SDL2_LIBRARY SDL2)
+    if(SDL2_INCLUDE_DIR AND SDL2_LIBRARY)
+      add_library(pc_sdl2 INTERFACE)
+      target_include_directories(pc_sdl2 SYSTEM INTERFACE ${SDL2_INCLUDE_DIR})
+      target_link_libraries(pc_sdl2 INTERFACE ${SDL2_LIBRARY})
+      set(PC_SDL_LIB pc_sdl2)
+    endif()
+  endif()
+  if(NOT PC_SDL_LIB AND ENGINE_SDL STREQUAL "ON")
+    message(FATAL_ERROR "ENGINE_SDL=ON but SDL2 was not found (apt install libsdl2-dev)")
+  endif()
+endif()
+
+if(PC_SDL_LIB)
+  message(STATUS "SDL2 viewer: enabled")
+  add_library(paracast_sdl STATIC src/platform/sdl.c)
+  target_link_libraries(paracast_sdl PUBLIC paracast ${PC_SDL_LIB})
+  target_compile_options(paracast_sdl PRIVATE ${PC_WARNINGS} ${PC_SAN})
+
+  add_executable(paracast_view tools/view.c)
+  target_link_libraries(paracast_view PRIVATE paracast_sdl)
+  target_compile_options(paracast_view PRIVATE ${PC_WARNINGS} ${PC_SAN})
+else()
+  message(STATUS "SDL2 viewer: disabled (SDL2 not found or ENGINE_SDL=OFF)")
+endif()
 
 if(ENGINE_TESTS)
   add_subdirectory(tests)
