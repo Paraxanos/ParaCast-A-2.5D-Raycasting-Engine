@@ -1,17 +1,21 @@
 # Paracast
 
-A deterministic, pure-C99 software renderer in the Wolfenstein 3D / Doom lineage. It starts as a
-DDA grid raycaster and grows into a sector/portal renderer with voxels and a swappable CPU/CUDA
-back-end. Math is 16.16 fixed point, so a given input produces bit-identical frames.
+A deterministic, pure-C99 software renderer in the Wolfenstein 3D / Doom lineage. It started
+as a DDA grid raycaster and is growing into a sector/portal renderer with voxels and a
+swappable CPU/CUDA back-end. Math is 16.16 fixed point, so a given input produces
+bit-identical frames.
 
 The full design is in [engine/docs/Portal-Voxel Software Renderer Architecture.md](engine/docs/Portal-Voxel%20Software%20Renderer%20Architecture.md).
-Measured results go in [engine/docs/feature-log.md](engine/docs/feature-log.md).
+Measured results go in [engine/docs/feature-log.md](engine/docs/feature-log.md); the map
+format is in [engine/docs/map-format.md](engine/docs/map-format.md).
 
 ## Status
 
-Phase 1 (foundations and raycaster): fixed-point core, arenas, procedural assets, textured walls
-with floor and ceiling, light colormap, PPM output, an SDL2 viewer with collision, tests, a
-benchmark harness, and CI. The grid raycaster is kept as the `v0` baseline for later phases.
+- **Phase 1** (done): fixed-point core, arenas, procedural assets, the grid raycaster kept as
+  the `v0` baseline, PPM output, SDL2 viewer, tests, benchmark harness, CI.
+- **Phase 2** (done): sector maps with a text format and loader, portal renderer with
+  per-sector floor and ceiling heights, steps, lowered ceilings and billboard sprites,
+  sector collision, automap and clip-window overlay, four test maps.
 
 ## Build
 
@@ -22,9 +26,14 @@ cmake -S . -B build/release          # Release by default
 cmake --build build/release -j
 ctest --test-dir build/release
 
-./build/release/engine/paracast_demo out.ppm 12.5 12.5 20   # x y yaw_degrees
-./build/release/engine/paracast_bench 600 bench.csv         # frames, optional CSV to append to
+./build/release/engine/paracast_demo out.ppm --map nested     # sector renderer, from the spawn point
+./build/release/engine/paracast_demo out.ppm 12.5 12.5 20     # v0 grid raycaster: x y yaw_degrees
+./build/release/engine/paracast_bench 600 bench.csv --map maze  # frames, optional CSV, optional map
 ```
+
+`--map` takes a name from `engine/maps/` (`steps`, `window`, `nested`, `maze`) or a path.
+Without it the tools use the v0 grid raycaster. The demo also takes `--automap` and
+`--clip` to render the top-down map or the portal clip windows instead of the view.
 
 ### Interactive viewer
 
@@ -32,14 +41,19 @@ Needs SDL2 (`sudo apt install libsdl2-dev` on Ubuntu/WSL). It is detected automa
 engine builds and tests without it.
 
 ```sh
-./build/release/engine/paracast_view            # WASD move, arrows or Q/E turn, Esc quits
+./build/release/engine/paracast_view                  # the "nested" map
+./build/release/engine/paracast_view --map maze
+./build/release/engine/paracast_view --grid           # v0 grid raycaster
 ./build/release/engine/paracast_view --scale 3 --novsync
 ```
 
-The window title shows fps and render time. Under WSL2 the window appears through WSLg.
+WASD moves, arrows or Q/E turn, **Tab** toggles the automap, **C** the clip-window overlay,
+Esc quits. The title bar shows fps, render time and the current sector. Under WSL2 the
+window appears through WSLg.
 
-Options: `-DENGINE_SDL=AUTO|ON|OFF`, `-DENGINE_SANITIZE=ON` (ASan + UBSan, use with `-DCMAKE_BUILD_TYPE=Debug`),
-`-DENGINE_OPENMP=ON` (linked now, used from Phase 3), `-DENGINE_TESTS=OFF`.
+Options: `-DENGINE_SDL=AUTO|ON|OFF`, `-DENGINE_SANITIZE=ON` (ASan + UBSan, use with
+`-DCMAKE_BUILD_TYPE=Debug`), `-DENGINE_OPENMP=ON` (linked now, used from Phase 3),
+`-DENGINE_TESTS=OFF`.
 
 ## Layout
 
@@ -47,14 +61,16 @@ Options: `-DENGINE_SDL=AUTO|ON|OFF`, `-DENGINE_SANITIZE=ON` (ASan + UBSan, use w
 engine/
   include/paracast.h   only public header
   src/core/            fixed point, arenas, sine table, hash (no I/O, no malloc)
-  src/assets/          palette, light colormap, procedural textures
-  src/map/             grid map and DDA ray cast
-  src/render/          framebuffer, raycaster, indexed-to-RGBA present
+  src/assets/          palette, light colormap, procedural textures and sprites
+  src/map/             grid map + DDA (v0), sector map tables, text loader
+  src/render/          framebuffer, grid raycaster, sector/portal renderer, present
+  src/debug/           automap, clip-window overlay
   src/sim/             fixed-tick player movement and collision
-  src/platform/        PPM writer, timer, SDL2 window (optional)
+  src/platform/        PPM writer, file reader, timer, SDL2 window (optional)
+  maps/                test maps (.map text) ; tools/gen_maze.py generates maze.map
   tools/               demo, benchmark and viewer executables
-  tests/               unit and golden-frame tests
-  docs/                architecture and feature log
+  tests/               unit, golden-frame, fuzz-style and determinism tests
+  docs/                architecture, map format, feature log
 ```
 
 ## License

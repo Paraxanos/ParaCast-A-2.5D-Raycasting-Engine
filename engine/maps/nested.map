@@ -1,0 +1,65 @@
+# nested: a raised, low-ceilinged dais in the middle of a courtyard.
+# A room with a hole in it is not convex, so the courtyard ring is five convex sectors
+# around the dais: every sector borders several others, several portals open onto the
+# same neighbour, and the dais is entered from four directions.
+#
+#       0..7  7..13  13..20
+#   0   +-----------------+
+#       |       T (0)     |
+#   7   +----+------+-----+
+#       | L  |  C   |  R  |
+#  13   | (1)| (2)  | (3) |
+#       +----+------+-----+
+#       |       B (4)     |
+#  20   +-----------------+
+
+player 3 3 45
+
+sector 0 floor 0 ceil 3.5 ftex 4 ctex 5 light 26
+  v 0 0 mid 0
+  v 20 0 mid 0
+  v 20 7 portal 3 up 2 low 2
+  v 13 7 portal 2 up 2 low 6
+  v 7 7 portal 1 up 2 low 2
+  v 0 7 mid 0
+end
+
+sector 1 floor 0 ceil 3.2 ftex 4 ctex 5 light 22
+  v 0 7 portal 0 up 2 low 2
+  v 7 7 portal 2 up 2 low 6
+  v 7 13 portal 4 up 2 low 2
+  v 0 13 mid 8
+end
+
+sector 2 floor 0.5 ceil 2.4 ftex 6 ctex 6 light 31
+  v 7 7 portal 0 up 2 low 6
+  v 13 7 portal 3 up 2 low 6
+  v 13 13 portal 4 up 2 low 6
+  v 7 13 portal 1 up 2 low 6
+end
+
+sector 3 floor 0 ceil 3.2 ftex 4 ctex 5 light 22
+  v 13 7 portal 0 up 2 low 2
+  v 20 7 mid 1
+  v 20 13 portal 4 up 2 low 2
+  v 13 13 portal 2 up 2 low 6
+end
+
+sector 4 floor 0 ceil 3.0 ftex 4 ctex 5 light 26
+  v 0 13 portal 1 up 2 low 2
+  v 7 13 portal 2 up 2 low 6
+  v 13 13 portal 3 up 2 low 2
+  v 20 13 mid 3
+  v 20 20 mid 3
+  v 0 20 mid 0
+end
+
+thing 2 2 2
+thing 18 2 2
+thing 2 18 2
+thing 18 18 2
+thing 10 10 1
+thing 4 10 0
+thing 16 10 0
+thing 10 17 0
+thing 10 3 1

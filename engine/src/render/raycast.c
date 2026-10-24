@@ -1,5 +1,7 @@
 #include "render/raycast.h"
 
+#include <string.h>
+
 #define FOV_PLANE    FX_C(0.66)   /* half-width of the view plane for a ~66 degree field of view */
 #define MIN_DIST     ((fx_t)1 << 8)
 #define LIGHT_SHIFT  15           /* one light level per 0.5 units of distance */
@@ -109,6 +111,7 @@ void pc_raycaster_render(pc_raycaster *rc, pc_fb *fb, const pc_gridmap *map,
     }
 
     if (stats) {
+        memset(stats, 0, sizeof *stats);
         stats->columns = (uint32_t)w;
         stats->dda_steps = dda_steps;
         stats->wall_px = wall_px;
