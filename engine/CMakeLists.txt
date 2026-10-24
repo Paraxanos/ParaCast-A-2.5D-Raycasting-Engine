@@ -19,10 +19,16 @@ add_library(paracast STATIC
   src/core/lut.c
   src/assets/assets.c
   src/map/gridmap.c
+  src/map/map.c
+  src/map/loader.c
   src/render/fb.c
   src/render/raycast.c
+  src/render/sector.c
   src/render/post/present.c
+  src/debug/automap.c
+  src/debug/clipview.c
   src/sim/player.c
+  src/platform/file.c
   src/platform/ppm.c
   src/platform/timer.c)
 target_include_directories(paracast PUBLIC include src)
@@ -41,6 +47,9 @@ foreach(tool demo bench)
 endforeach()
 target_compile_definitions(paracast_bench PRIVATE
   PC_GIT_HASH="${PC_GIT_HASH}" PC_BUILD_TYPE="${CMAKE_BUILD_TYPE}")
+
+# Tools and tests find the shipped maps here unless given an explicit path.
+target_compile_definitions(paracast PUBLIC PC_MAPS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/maps")
 
 if(NOT ENGINE_SDL STREQUAL "OFF")
   find_package(SDL2 CONFIG QUIET)

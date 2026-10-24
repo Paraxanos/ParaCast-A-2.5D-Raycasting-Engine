@@ -54,15 +54,22 @@ pc_window *pc_window_open(const char *title, int w, int h, int scale, int vsync)
     return win;
 }
 
-int pc_window_poll(pc_window *win, pc_input *in)
+int pc_window_poll(pc_window *win, pc_input *in, pc_ui *ui)
 {
     (void)win;
     int running = 1;
     SDL_Event e;
+    ui->automap = ui->clipview = 0;
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_QUIT ||
             (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_ESCAPE))
             running = 0;
+        else if (e.type == SDL_KEYDOWN && !e.key.repeat) {
+            if (e.key.keysym.scancode == SDL_SCANCODE_TAB)
+                ui->automap = 1;
+            else if (e.key.keysym.scancode == SDL_SCANCODE_C)
+                ui->clipview = 1;
+        }
     }
 
     const Uint8 *k = SDL_GetKeyboardState(NULL);

@@ -56,3 +56,12 @@ jobs:
           echo "$out"
           echo "$out" | grep -q "0 allocs in frame loop"
           echo "$out" | grep -q "run hash 48b464b95d006180"
+
+      - name: Benchmark smoke (sector maps)
+        if: matrix.name == 'release'
+        run: |
+          for m in steps window nested maze; do
+            out=$(./build/engine/paracast_bench 120 --map $m)
+            echo "$out"
+            echo "$out" | grep -q "0 allocs in frame loop"
+          done

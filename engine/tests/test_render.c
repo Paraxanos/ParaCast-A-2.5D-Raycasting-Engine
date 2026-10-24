@@ -81,7 +81,7 @@ static int scene_init(scene *s, size_t offset)
 
 static uint64_t render_golden(scene *s, pc_stats *st)
 {
-    pc_camera cam = { { FX_C(12.5), FX_C(12.5) }, PC_ANGLE_DEG(20.0) };
+    pc_camera cam = { { FX_C(12.5), FX_C(12.5) }, PC_ANGLE_DEG(20.0), 0, 0 };
     memset(s->fb.pix, SENTINEL, (size_t)W * H);
     pc_raycaster_render(&s->rc, &s->fb, &s->map, &s->assets, &cam, st);
     return pc_hash64(s->fb.pix, (size_t)W * H, PC_HASH_SEED);

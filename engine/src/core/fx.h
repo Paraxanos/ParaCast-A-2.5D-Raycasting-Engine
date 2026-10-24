@@ -46,4 +46,23 @@ static inline fx_t fx_div(fx_t a, fx_t b)
     return (fx_t)q;
 }
 
+/* Floor of the square root; exact for any 64-bit input. Applied to a raw 16.16 vector
+ * length squared (scale 2^32) it yields the raw 16.16 length. */
+static inline uint32_t pc_isqrt64(uint64_t n)
+{
+    uint64_t res = 0, bit = (uint64_t)1 << 62;
+    while (bit > n)
+        bit >>= 2;
+    while (bit) {
+        if (n >= res + bit) {
+            n -= res + bit;
+            res = (res >> 1) + bit;
+        } else {
+            res >>= 1;
+        }
+        bit >>= 2;
+    }
+    return (uint32_t)res;
+}
+
 #endif

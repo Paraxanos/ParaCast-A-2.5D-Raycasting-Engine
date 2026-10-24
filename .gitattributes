@@ -4,3 +4,5 @@
 *.txt text eol=lf
 *.md text eol=lf
 *.docx binary
+*.map text eol=lf
+*.py text eol=lf

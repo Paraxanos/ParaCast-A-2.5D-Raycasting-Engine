@@ -1,0 +1,48 @@
+# window: two rooms divided by a one-unit-thick wall holding a doorway and a window.
+# Each opening is its own sector between the rooms, so seeing through it is a chain of
+# portals A -> opening -> B. The window has a sill (lower wall) and a lintel (upper
+# wall) and is too low to walk through; the doorway is a normal walkable gap.
+
+player 2 3 0
+
+sector 0 floor 0 ceil 3.0 ftex 4 ctex 5 light 24
+  v 0 0 mid 0
+  v 10 0 mid 0
+  v 10 2 portal 2 up 2 low 2
+  v 10 4 mid 0
+  v 10 6 portal 3 up 2 low 2
+  v 10 8 mid 0
+  v 10 10 mid 1
+  v 0 10 mid 0
+end
+
+sector 1 floor 0 ceil 2.8 ftex 7 ctex 5 light 30
+  v 11 0 mid 1
+  v 21 0 mid 8
+  v 21 10 mid 1
+  v 11 10 mid 1
+  v 11 8 portal 3 up 2 low 2
+  v 11 6 mid 1
+  v 11 4 portal 2 up 2 low 2
+  v 11 2 mid 1
+end
+
+sector 2 floor 0 ceil 2.2 ftex 6 ctex 6 light 26
+  v 10 2 mid 2
+  v 11 2 portal 1 up 2 low 2
+  v 11 4 mid 2
+  v 10 4 portal 0 up 2 low 2
+end
+
+sector 3 floor 0.9 ceil 1.9 ftex 6 ctex 6 light 31
+  v 10 6 mid 2
+  v 11 6 portal 1 up 2 low 2
+  v 11 8 mid 2
+  v 10 8 portal 0 up 2 low 2
+end
+
+thing 3 3 0
+thing 6 8 1
+thing 16 3 2
+thing 14 8 1
+thing 18 7 0

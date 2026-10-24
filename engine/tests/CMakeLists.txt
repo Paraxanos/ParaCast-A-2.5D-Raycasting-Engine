@@ -1,4 +1,4 @@
-foreach(t core render sim)
+foreach(t core render sim map sector)
   add_executable(test_${t} test_${t}.c)
   target_link_libraries(test_${t} PRIVATE paracast)
   target_compile_options(test_${t} PRIVATE ${PC_WARNINGS} ${PC_SAN})

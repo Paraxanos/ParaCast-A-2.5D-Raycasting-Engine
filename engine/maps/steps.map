@@ -1,0 +1,46 @@
+# steps: a hall with two stairs rising to a lowered ceiling, and a drop-off pit.
+# Exercises step heights (lower walls), lowered ceilings (upper walls), a floor below
+# the neighbour's, and the sign texture at the far end to check texture orientation.
+#
+#   pit  | hall (0)        | step1 (1) | step2 (2)
+#   -4..0|  0..12          | 12..16    | 16..20       x
+#
+# Textures: 0 brick 1 tile 2 stone 3 wood 4 floor 5 ceiling 6 metal 7 carpet 8 sign
+
+player 2 4 0
+
+sector 0 floor 0 ceil 3.2 ftex 4 ctex 5 light 26
+  v 0 0 mid 0
+  v 12 0 portal 1 up 2 low 2
+  v 12 8 mid 1
+  v 0 8 mid 0
+  v 0 6 portal 3 up 0 low 0
+  v 0 2 mid 0
+end
+
+sector 1 floor 0.4 ceil 3.0 ftex 6 ctex 5 light 24
+  v 12 0 mid 2
+  v 16 0 portal 2 up 2 low 2
+  v 16 8 mid 2
+  v 12 8 portal 0 up 2 low 2
+end
+
+sector 2 floor 0.8 ceil 2.6 ftex 7 ctex 5 light 22
+  v 16 0 mid 3
+  v 20 0 mid 8
+  v 20 8 mid 3
+  v 16 8 portal 1 up 3 low 3
+end
+
+sector 3 floor -0.4 ceil 3.0 ftex 6 ctex 5 light 18
+  v -4 2 mid 2
+  v 0 2 portal 0 up 2 low 2
+  v 0 6 mid 2
+  v -4 6 mid 2
+end
+
+thing 4 2 0
+thing 8 6 1
+thing 14 2 2
+thing 18 6 0
+thing -2 4 1
