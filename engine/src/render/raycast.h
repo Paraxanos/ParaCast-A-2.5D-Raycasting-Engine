@@ -28,6 +28,8 @@ typedef struct {
     uint32_t portal_columns;
     uint32_t sprite_px;
     uint32_t visit_overflow; /* portals refused because the visit budget ran out */
+    uint32_t commands;       /* records the front-end emitted */
+    uint32_t cmds_dropped;   /* records lost to a full command buffer or bin table */
 } pc_stats;
 
 /* All per-frame scratch lives here, allocated once so a frame makes no allocations. */

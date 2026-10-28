@@ -24,10 +24,13 @@ add_library(paracast STATIC
   src/render/fb.c
   src/render/raycast.c
   src/render/sector.c
+  src/render/cmdbuf/cmdbuf.c
+  src/render/backend_cpu/backend_cpu.c
   src/render/post/present.c
   src/debug/automap.c
   src/debug/clipview.c
   src/sim/player.c
+  src/platform/cmddump.c
   src/platform/file.c
   src/platform/ppm.c
   src/platform/timer.c)
@@ -35,12 +38,25 @@ target_include_directories(paracast PUBLIC include src)
 target_compile_options(paracast PRIVATE ${PC_WARNINGS} ${PC_SAN})
 target_link_libraries(paracast PUBLIC m ${PC_SAN})
 
-if(ENGINE_OPENMP)
-  find_package(OpenMP REQUIRED COMPONENTS C)
-  target_link_libraries(paracast PUBLIC OpenMP::OpenMP_C)
+# The strip rasterizer only uses OpenMP when it is compiled in; without it every thread
+# count runs on the calling thread and the pictures are identical either way.
+if(NOT ENGINE_OPENMP STREQUAL "OFF")
+  if(ENGINE_OPENMP STREQUAL "ON")
+    find_package(OpenMP REQUIRED COMPONENTS C)
+  else()
+    find_package(OpenMP COMPONENTS C)
+  endif()
+  if(OpenMP_C_FOUND)
+    message(STATUS "OpenMP: enabled")
+    target_link_libraries(paracast PUBLIC OpenMP::OpenMP_C)
+  else()
+    message(STATUS "OpenMP: not found, back-end stays single threaded")
+  endif()
+else()
+  message(STATUS "OpenMP: disabled")
 endif()
 
-foreach(tool demo bench)
+foreach(tool demo bench replay)
   add_executable(paracast_${tool} tools/${tool}.c)
   target_link_libraries(paracast_${tool} PRIVATE paracast)
   target_compile_options(paracast_${tool} PRIVATE ${PC_WARNINGS} ${PC_SAN})

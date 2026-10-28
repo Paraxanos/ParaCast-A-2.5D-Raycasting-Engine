@@ -58,6 +58,7 @@ static void test_shipped_maps(void)
 {
     struct { const char *name; uint32_t sectors; } maps[] = {
         { "steps", 4 }, { "window", 4 }, { "nested", 5 }, { "maze", 36 },
+        { "corridor", 24 }, { "hall", 1 },
     };
     for (size_t i = 0; i < sizeof maps / sizeof maps[0]; i++) {
         pc_map m;

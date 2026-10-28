@@ -17,15 +17,19 @@ jobs:
             build_type: Release
             sanitize: "OFF"
             sdl: "ON"
+            openmp: "ON"
           - name: asan-ubsan
             build_type: Debug
             sanitize: "ON"
             sdl: "ON"
-          # The engine must build and pass its tests with no SDL installed at all.
+            openmp: "ON"
+          # The engine must build and pass its tests with no SDL and no OpenMP at all:
+          # thread counts then run on the calling thread and the pictures are unchanged.
           - name: headless
             build_type: Release
             sanitize: "OFF"
             sdl: "OFF"
+            openmp: "OFF"
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +44,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DENGINE_SANITIZE=${{ matrix.sanitize }}
           -DENGINE_SDL=${{ matrix.sdl }}
+          -DENGINE_OPENMP=${{ matrix.openmp }}
 
       - name: Build
         run: cmake --build build -j
@@ -60,8 +65,23 @@ jobs:
       - name: Benchmark smoke (sector maps)
         if: matrix.name == 'release'
         run: |
-          for m in steps window nested maze; do
+          for m in steps window nested maze corridor hall; do
             out=$(./build/engine/paracast_bench 120 --map $m)
             echo "$out"
             echo "$out" | grep -q "0 allocs in frame loop"
+            echo "$out" | grep -q "WARNING" && exit 1 || true
           done
+
+      # Threads must not change a single pixel: the chained hash over every frame is the
+      # same for any thread count and strip height.
+      - name: Thread-count independence
+        if: matrix.name == 'release'
+        run: |
+          ref=$(./build/engine/paracast_bench 120 --map nested --threads 1 | grep "run hash")
+          for t in 2 4 7; do
+            for strip in 8 32 101; do
+              got=$(./build/engine/paracast_bench 120 --map nested --threads $t --strip $strip | grep "run hash")
+              [ "$got" = "$ref" ] || { echo "threads=$t strip=$strip: $got != $ref"; exit 1; }
+            done
+          done
+          echo "all thread counts match: $ref"

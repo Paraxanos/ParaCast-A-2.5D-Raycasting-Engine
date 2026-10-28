@@ -34,6 +34,21 @@ static inline int light_level(int64_t dist, int sector_light, int bias)
 
 int pc_sector_renderer_init(pc_sector_renderer *sr, pc_arena *arena, int w, int h)
 {
+    pc_render_cfg cfg = { w, h, 1, 0, 0 };
+    return pc_sector_renderer_init_cfg(sr, arena, &cfg);
+}
+
+/* Far more commands than any scene needs (a few thousand at 640x400), sized from the
+ * screen so the worst case, every pixel its own span, still fits a quarter over. */
+static uint32_t default_cmd_cap(int w, int h)
+{
+    uint32_t cap = (uint32_t)((int64_t)w * h / 4);
+    return cap < (1u << 16) ? (1u << 16) : cap;
+}
+
+int pc_sector_renderer_init_cfg(pc_sector_renderer *sr, pc_arena *arena, const pc_render_cfg *cfg)
+{
+    const int w = cfg->w, h = cfg->h;
     memset(sr, 0, sizeof *sr);
     sr->w = w;
     sr->h = h;
@@ -43,11 +58,22 @@ int pc_sector_renderer_init(pc_sector_renderer *sr, pc_arena *arena, int w, int 
     sr->cam_x = (fx_t *)pc_arena_alloc_array(arena, (size_t)w, sizeof(fx_t), 64);
     sr->ray_x = (fx_t *)pc_arena_alloc_array(arena, (size_t)w, sizeof(fx_t), 64);
     sr->ray_y = (fx_t *)pc_arena_alloc_array(arena, (size_t)w, sizeof(fx_t), 64);
+    sr->depth = (fx_t *)pc_arena_alloc_array(arena, (size_t)w, sizeof(fx_t), 64);
 
     size_t n16 = (size_t)PC_MAX_VISITS * w;
     int16_t *i16 = (int16_t *)pc_arena_alloc_array(arena, n16 * 6, sizeof(int16_t), 64);
     uint8_t *u8 = (uint8_t *)pc_arena_alloc_array(arena, n16, 1, 64);
-    if (!sr->ytop || !sr->ybot || !sr->cam_x || !sr->ray_x || !sr->ray_y || !i16 || !u8)
+    if (!sr->ytop || !sr->ybot || !sr->cam_x || !sr->ray_x || !sr->ray_y || !sr->depth ||
+        !i16 || !u8)
+        return -1;
+
+    uint32_t cap = cfg->max_cmds ? cfg->max_cmds : default_cmd_cap(w, h);
+    if (pc_cmdbuf_init(&sr->cmds, arena, cap))
+        return -1;
+
+    pc_backend_cfg bc = { w, h, cfg->threads, cfg->strip_h, cap };
+    pc_backend_cpu_make(&sr->be);
+    if (sr->be.init(&sr->be, arena, &bc))
         return -1;
 
     for (int i = 0; i < PC_MAX_VISITS; i++) {
@@ -81,25 +107,35 @@ static int push_visit(pc_sector_renderer *sr, pc_id sector, int x0, int x1, int 
 
 /* ---- walls ----------------------------------------------------------------- */
 
-/* One column of a wall piece. y_top is the piece's unclamped top row: the texture is
- * anchored there and repeats every world unit, 64 texels per unit both ways. */
-static void draw_wall_col(pc_sector_renderer *sr, int x, int y0, int y1, int y_top,
-                          const uint8_t *tex, int tx, fx_t t, int level)
+/* Emits one column of a wall piece. y_top is the piece's unclamped top row: the texture
+ * is anchored there and repeats every world unit, 64 texels per unit both ways. Only
+ * bits 16..21 of the texel row ever select a texel, so v0 and dv are kept modulo 2^32:
+ * the back-end sums them in 32 bits and gets exactly the rows a 64-bit sum would. */
+static void emit_wall(pc_sector_renderer *sr, int vi, int wall, int x, int y0, int y1,
+                      int y_top, int tex, int tx, fx_t t, int level)
 {
     if (y0 >= y1)
         return;
 
-    const uint8_t *cm = sr->as->colormap[level];
-    int64_t dv = ((int64_t)t * PC_TEX_SIZE) / sr->h;    /* texels per pixel, 16.16 */
-    int64_t vpos = (int64_t)(y0 - y_top) * dv;
-    uint8_t *dst = sr->fb->pix + (size_t)y0 * sr->w + x;
+    pc_cmd *c = pc_cmdbuf_push(&sr->cmds);
+    if (!c)
+        return;
 
-    for (int y = y0; y < y1; y++) {
-        int ty = (int)(vpos >> FX_SHIFT) & (PC_TEX_SIZE - 1);
-        *dst = cm[tex[(ty << PC_TEX_SHIFT) + tx]];
-        dst += sr->w;
-        vpos += dv;
-    }
+    int64_t dv = ((int64_t)t * PC_TEX_SIZE) / sr->h;    /* texels per pixel, 16.16 */
+    c->type = PC_CMD_WALL_COL;
+    c->tex = (uint8_t)tex;
+    c->level = (uint8_t)level;
+    c->tx = (uint8_t)tx;
+    c->x0 = (uint16_t)x;
+    c->x1 = (uint16_t)(x + 1);
+    c->y0 = (int16_t)y0;
+    c->y1 = (int16_t)y1;
+    c->v0 = (uint32_t)((int64_t)(y0 - y_top) * dv);
+    c->dv = (uint32_t)dv;
+    c->dist = 0;
+    c->visit = (uint16_t)vi;
+    c->wall = (uint16_t)wall;
+    c->reserved = 0;
     sr->st.wall_px += (uint32_t)(y1 - y0);
 }
 
@@ -138,7 +174,6 @@ static void process_visit(pc_sector_renderer *sr, int vi)
     const fx_t floor_h = m->floor_h[s], ceil_h = m->ceil_h[s];
     const fx_t dz_c = ceil_h - z, dz_f = floor_h - z;
     const int sector_light = m->light[s];
-    const uint8_t *const *tex = sr->as->tex;
 
     v->cmin = v->fmin = h;
     v->cmax = v->fmax = 0;
@@ -237,8 +272,8 @@ static void process_visit(pc_sector_renderer *sr, int vi)
         const pc_id back = m->back[wi];
 
         if (back == PC_NONE || !can_recurse) {
-            draw_wall_col(sr, x, Yc, Yf, y_c, tex[m->tex_mid[wi]], tx, t, level);
-            sr->fb->depth[x] = t;
+            emit_wall(sr, vi, best, x, Yc, Yf, y_c, m->tex_mid[wi], tx, t, level);
+            sr->depth[x] = t;
             sr->ytop[x] = sr->ybot[x] = 0;
             continue;
         }
@@ -250,8 +285,8 @@ static void process_visit(pc_sector_renderer *sr, int vi)
         if (Ybf < Ybc)
             Ybf = Ybc;
 
-        draw_wall_col(sr, x, Yc, Ybc, y_c, tex[m->tex_up[wi]], tx, t, level);
-        draw_wall_col(sr, x, Ybf, Yf, y_bf, tex[m->tex_low[wi]], tx, t, level);
+        emit_wall(sr, vi, best, x, Yc, Ybc, y_c, m->tex_up[wi], tx, t, level);
+        emit_wall(sr, vi, best, x, Ybf, Yf, y_bf, m->tex_low[wi], tx, t, level);
 
         if (Ybc < Ybf) {
             sr->ytop[x] = (int16_t)Ybc;
@@ -260,7 +295,7 @@ static void process_visit(pc_sector_renderer *sr, int vi)
             if (x > cmax_x[best]) cmax_x[best] = x;
             sr->st.portal_columns++;
         } else {
-            sr->fb->depth[x] = t;       /* the portal is shut at this column */
+            sr->depth[x] = t;           /* the portal is shut at this column */
             sr->ytop[x] = sr->ybot[x] = 0;
         }
     }
@@ -274,8 +309,9 @@ static void process_visit(pc_sector_renderer *sr, int vi)
 
 /* ---- floors and ceilings --------------------------------------------------- */
 
-static void draw_plane(pc_sector_renderer *sr, const pc_visit *v, int is_ceil)
+static void emit_plane(pc_sector_renderer *sr, int vi, int is_ceil)
 {
+    const pc_visit *v = &sr->visits[vi];
     const pc_map *m = sr->map;
     const pc_id s = v->sector;
     const int h = sr->h;
@@ -291,8 +327,7 @@ static void draw_plane(pc_sector_renderer *sr, const pc_visit *v, int is_ceil)
     if (dz <= 0)
         return;
 
-    const uint8_t *tex = sr->as->tex[is_ceil ? m->ceil_tex[s] : m->floor_tex[s]];
-    const pc_vec2 pos = sr->cam.pos;
+    const int tex = is_ceil ? m->ceil_tex[s] : m->floor_tex[s];
 
     for (int y = ymin; y < ymax; y++) {
         /* Row distance: twice the rows' offset from the horizon in half pixels. */
@@ -302,8 +337,7 @@ static void draw_plane(pc_sector_renderer *sr, const pc_visit *v, int is_ceil)
         int64_t dist = dz * 2 * h / q;
         if (dist > DIST_MAX)
             dist = DIST_MAX;
-        const uint8_t *cm = sr->as->colormap[light_level(dist, m->light[s], 0)];
-        uint8_t *row = sr->fb->pix + (size_t)y * sr->w;
+        const int level = light_level(dist, m->light[s], 0);
 
         int x = v->x0;
         while (x < v->x1) {
@@ -314,13 +348,23 @@ static void draw_plane(pc_sector_renderer *sr, const pc_visit *v, int is_ceil)
             const int xa = x;
             while (x < v->x1 && pt[x] <= y && y < pb[x])
                 x++;
-            for (int xi = xa; xi < x; xi++) {
-                fx_t wx = pos.x + fx_mul((fx_t)dist, sr->ray_x[xi]);
-                fx_t wy = pos.y + fx_mul((fx_t)dist, sr->ray_y[xi]);
-                int tx = fx_frac(wx) >> (FX_SHIFT - PC_TEX_SHIFT);
-                int ty = fx_frac(wy) >> (FX_SHIFT - PC_TEX_SHIFT);
-                row[xi] = cm[tex[(ty << PC_TEX_SHIFT) + tx]];
-            }
+
+            pc_cmd *c = pc_cmdbuf_push(&sr->cmds);
+            if (!c)
+                continue;
+            c->type = PC_CMD_PLANE_SPAN;
+            c->tex = (uint8_t)tex;
+            c->level = (uint8_t)level;
+            c->tx = 0;
+            c->x0 = (uint16_t)xa;
+            c->x1 = (uint16_t)x;
+            c->y0 = (int16_t)y;
+            c->y1 = (int16_t)(y + 1);
+            c->v0 = c->dv = 0;
+            c->dist = (fx_t)dist;
+            c->visit = (uint16_t)vi;
+            c->wall = 0;
+            c->reserved = 0;
             sr->st.plane_px += (uint32_t)(x - xa);
         }
     }
@@ -328,11 +372,12 @@ static void draw_plane(pc_sector_renderer *sr, const pc_visit *v, int is_ceil)
 
 /* ---- sprites --------------------------------------------------------------- */
 
-static void draw_sprite(pc_sector_renderer *sr, int thing, fx_t d, fx_t lat)
+static void emit_sprite(pc_sector_renderer *sr, int thing, fx_t d, fx_t lat)
 {
     const pc_map *m = sr->map;
     const pc_sprite *sp = &sr->as->sprites[m->thing_sprite[thing]];
     const pc_id s = m->thing_sector[thing];
+    const int sprite_id = m->thing_sprite[thing];
     const int w = sr->w, h = sr->h;
 
     const fx_t inv = fx_div(FX_ONE, d);
@@ -348,7 +393,7 @@ static void draw_sprite(pc_sector_renderer *sr, int thing, fx_t d, fx_t lat)
     const int sx0 = cx - wpx / 2;
     const int sx1 = sx0 + wpx;
     const int64_t dv = ((int64_t)PC_TEX_SIZE * FX_ONE) / hpx;
-    const uint8_t *cm = sr->as->colormap[light_level(d, m->light[s], 0)];
+    const int level = light_level(d, m->light[s], 0);
 
     for (int vi = 0; vi < sr->nvisits; vi++) {
         const pc_visit *v = &sr->visits[vi];
@@ -358,7 +403,7 @@ static void draw_sprite(pc_sector_renderer *sr, int thing, fx_t d, fx_t lat)
         const int xa = sx0 > v->x0 ? sx0 : v->x0;
         const int xb = sx1 < v->x1 ? sx1 : v->x1;
         for (int x = xa; x < xb; x++) {
-            if (v->top[x] >= v->bot[x] || d >= sr->fb->depth[x])
+            if (v->top[x] >= v->bot[x] || d >= sr->depth[x])
                 continue;
 
             const int y0 = y_top > v->top[x] ? y_top : v->top[x];
@@ -366,24 +411,30 @@ static void draw_sprite(pc_sector_renderer *sr, int thing, fx_t d, fx_t lat)
             if (y0 >= y1)
                 continue;
 
-            const int tx = (int)((int64_t)(x - sx0) * PC_TEX_SIZE / wpx);
-            int64_t vpos = (int64_t)(y0 - y_top) * dv;
-            uint8_t *dst = sr->fb->pix + (size_t)y0 * w + x;
-            for (int y = y0; y < y1; y++, dst += w, vpos += dv) {
-                int ty = (int)(vpos >> FX_SHIFT);
-                if (ty >= PC_TEX_SIZE)
-                    ty = PC_TEX_SIZE - 1;
-                uint8_t px = sp->pix[(ty << PC_TEX_SHIFT) + tx];
-                if (px) {
-                    *dst = cm[px];
-                    sr->st.sprite_px++;
-                }
-            }
+            /* The depth and portal-window tests happen here, so the back-end gets a
+             * column that is already clipped and needs no depth buffer. */
+            pc_cmd *c = pc_cmdbuf_push(&sr->cmds);
+            if (!c)
+                continue;
+            c->type = PC_CMD_SPRITE_COL;
+            c->tex = (uint8_t)sprite_id;
+            c->level = (uint8_t)level;
+            c->tx = (uint8_t)((int64_t)(x - sx0) * PC_TEX_SIZE / wpx);
+            c->x0 = (uint16_t)x;
+            c->x1 = (uint16_t)(x + 1);
+            c->y0 = (int16_t)y0;
+            c->y1 = (int16_t)y1;
+            c->v0 = (uint32_t)((int64_t)(y0 - y_top) * dv);
+            c->dv = (uint32_t)dv;
+            c->dist = d;
+            c->visit = (uint16_t)vi;
+            c->wall = 0;
+            c->reserved = 0;
         }
     }
 }
 
-static void draw_sprites(pc_sector_renderer *sr, pc_vec2 dir)
+static void emit_sprites(pc_sector_renderer *sr, pc_vec2 dir)
 {
     const pc_map *m = sr->map;
     int n = 0;
@@ -413,23 +464,23 @@ static void draw_sprites(pc_sector_renderer *sr, pc_vec2 dir)
 
     for (int k = 0; k < n; k++) {
         int i = sr->sprite_order[k];
-        draw_sprite(sr, i, sr->sprite_depth[i], sr->sprite_lat[i]);
+        emit_sprite(sr, i, sr->sprite_depth[i], sr->sprite_lat[i]);
     }
 }
 
 /* ---- frame ----------------------------------------------------------------- */
 
-void pc_sector_render(pc_sector_renderer *sr, pc_fb *fb, const pc_map *map,
-                      const pc_assets *as, const pc_camera *cam, pc_stats *stats)
+void pc_sector_frontend(pc_sector_renderer *sr, const pc_map *map, const pc_assets *as,
+                        const pc_camera *cam, pc_stats *stats)
 {
     const int w = sr->w;
 
     sr->map = map;
     sr->as = as;
-    sr->fb = fb;
     sr->cam = *cam;
     memset(&sr->st, 0, sizeof sr->st);
     sr->nvisits = 0;
+    pc_cmdbuf_reset(&sr->cmds);
 
     if (cam->sector >= map->nsectors) {
         if (stats)
@@ -444,7 +495,7 @@ void pc_sector_render(pc_sector_renderer *sr, pc_fb *fb, const pc_map *map,
         sr->ray_y[x] = dir.y + fx_mul(plane.y, sr->cam_x[x]);
         sr->ytop[x] = 0;
         sr->ybot[x] = (int16_t)sr->h;
-        fb->depth[x] = FX_MAX;
+        sr->depth[x] = FX_MAX;
     }
 
     push_visit(sr, cam->sector, 0, w, -1, -1);
@@ -452,13 +503,58 @@ void pc_sector_render(pc_sector_renderer *sr, pc_fb *fb, const pc_map *map,
         process_visit(sr, vi);
 
     for (int vi = 0; vi < sr->nvisits; vi++) {
-        draw_plane(sr, &sr->visits[vi], 1);
-        draw_plane(sr, &sr->visits[vi], 0);
+        emit_plane(sr, vi, 1);
+        emit_plane(sr, vi, 0);
     }
-    draw_sprites(sr, dir);
+    emit_sprites(sr, dir);
 
     sr->st.columns = (uint32_t)w;
     sr->st.sector_visits = (uint32_t)sr->nvisits;
+    sr->st.commands = sr->cmds.count;
+    sr->st.cmds_dropped = sr->cmds.dropped;
     if (stats)
         *stats = sr->st;
+}
+
+void pc_sector_frame_params(const pc_sector_renderer *sr, pc_frame_params *fp)
+{
+    fp->w = sr->w;
+    fp->h = sr->h;
+    fp->pos = sr->cam.pos;
+    fp->ray_x = sr->ray_x;
+    fp->ray_y = sr->ray_y;
+}
+
+void pc_sector_backend(pc_sector_renderer *sr, pc_fb *fb, pc_stats *stats)
+{
+    if (sr->uploaded != sr->as) {
+        sr->be.upload_assets(&sr->be, sr->as);
+        sr->uploaded = sr->as;
+    }
+
+    pc_frame_params fp;
+    pc_sector_frame_params(sr, &fp);
+    sr->be.begin_frame(&sr->be, &fp, fb);
+    sr->be.submit(&sr->be, &sr->cmds);
+    sr->be.end_frame(&sr->be);
+
+    pc_backend_stats bs = sr->be.stats(&sr->be);
+    sr->st.sprite_px = bs.sprite_px;
+    sr->st.cmds_dropped = sr->cmds.dropped + bs.cmds_dropped;
+    if (stats) {
+        stats->sprite_px = sr->st.sprite_px;
+        stats->cmds_dropped = sr->st.cmds_dropped;
+    }
+}
+
+void pc_sector_render(pc_sector_renderer *sr, pc_fb *fb, const pc_map *map,
+                      const pc_assets *as, const pc_camera *cam, pc_stats *stats)
+{
+    pc_sector_frontend(sr, map, as, cam, stats);
+    if (cam->sector >= map->nsectors)
+        return;
+
+    pc_sector_backend(sr, fb, stats);
+    for (int x = 0; x < sr->w; x++)
+        fb->depth[x] = sr->depth[x];
 }

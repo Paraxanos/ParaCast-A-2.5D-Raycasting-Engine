@@ -96,8 +96,8 @@ static void check_pose(scene *s, const pc_camera *c, const char *name)
  * up as an unwritten pixel or a wall+plane count that is not the screen size. */
 static void test_coverage(void)
 {
-    const char *names[] = { "steps", "window", "nested", "maze" };
-    for (int mi = 0; mi < 4; mi++) {
+    const char *names[] = { "steps", "window", "nested", "maze", "corridor", "hall" };
+    for (int mi = 0; mi < 6; mi++) {
         scene s;
         PC_CHECK(scene_init(&s, names[mi], 0) == 0);
 
@@ -306,6 +306,10 @@ static const golden k_golden[] = {
     { "maze",   4.0,  4.0,  90.0, 0x4231381122c006d6ULL },
     { "maze",  20.0, 20.0,   0.0, 0x1f1e3bdfe3dbb144ULL },
     { "maze",  28.0, 12.0, 135.0, 0x5eb0123c14c56429ULL },
+    { "corridor", 2.0, 2.0,   0.0, 0xf986f6cc4df954d7ULL },
+    { "corridor", 70.0, 3.0, 200.0, 0x1723f7cd897760cdULL },
+    { "hall",   4.0, 40.0,   0.0, 0x858a2aa119a81405ULL },
+    { "hall",  40.0, 40.0,  45.0, 0x027ca1617efa55e2ULL },
 };
 
 static void test_golden(void)

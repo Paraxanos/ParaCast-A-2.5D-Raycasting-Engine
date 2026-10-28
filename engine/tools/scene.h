@@ -14,6 +14,13 @@
 #define PC_MAPS_DIR "maps"
 #endif
 
+/* Common command-line options: --size WxH, --threads N, --strip H. */
+typedef struct {
+    int w, h;
+    int threads;       /* 1 = single thread */
+    int strip_h;       /* 0 = default */
+} scene_opts;
+
 typedef struct {
     int           w, h;
     void         *mem;
@@ -29,6 +36,36 @@ typedef struct {
     pc_sector_renderer sr;
 } scene;
 
+static inline scene_opts scene_default_opts(void)
+{
+    scene_opts o = { 640, 400, 1, 0 };
+    return o;
+}
+
+/* Consumes argv[*i] if it is one of the common options. Returns 1 if it did (advancing
+ * *i past any value), 0 if the argument is not ours, -1 if it is ours but malformed. */
+static inline int scene_parse_opt(scene_opts *o, int argc, char **argv, int *i)
+{
+    const char *a = argv[*i];
+    if (!strcmp(a, "--size") && *i + 1 < argc) {
+        int w, h;
+        if (sscanf(argv[++*i], "%dx%d", &w, &h) != 2 || w < 16 || h < 16 || w > 8192 || h > 8192)
+            return -1;
+        o->w = w;
+        o->h = h;
+        return 1;
+    }
+    if (!strcmp(a, "--threads") && *i + 1 < argc) {
+        o->threads = atoi(argv[++*i]);
+        return o->threads >= 1 && o->threads <= 256 ? 1 : -1;
+    }
+    if (!strcmp(a, "--strip") && *i + 1 < argc) {
+        o->strip_h = atoi(argv[++*i]);
+        return o->strip_h >= 1 ? 1 : -1;
+    }
+    return 0;
+}
+
 /* "nested" or "nested.map" resolve inside PC_MAPS_DIR; anything with a slash is a path. */
 static inline const char *scene_map_path(const char *name, char *buf, size_t cap)
 {
@@ -40,13 +77,15 @@ static inline const char *scene_map_path(const char *name, char *buf, size_t cap
 }
 
 /* map_name == NULL selects the grid raycaster. Returns 0 on success. */
-static inline int scene_init(scene *s, const char *map_name, int w, int h)
+static inline int scene_init(scene *s, const char *map_name, const scene_opts *o)
 {
+    const int w = o->w, h = o->h;
     memset(s, 0, sizeof *s);
     s->w = w;
     s->h = h;
 
-    size_t mem_size = (size_t)16 << 20;
+    /* Address space only: pages are touched as the arena fills. 1080p needs about 40 MB. */
+    size_t mem_size = (size_t)128 << 20;
     s->mem = malloc(mem_size);
     if (!s->mem)
         return -1;
@@ -79,7 +118,8 @@ static inline int scene_init(scene *s, const char *map_name, int w, int h)
         return -1;
     }
     s->sector_mode = 1;
-    return pc_sector_renderer_init(&s->sr, &s->arena, w, h);
+    pc_render_cfg cfg = { w, h, o->threads, o->strip_h, 0 };
+    return pc_sector_renderer_init_cfg(&s->sr, &s->arena, &cfg);
 }
 
 static inline void scene_free(scene *s)
