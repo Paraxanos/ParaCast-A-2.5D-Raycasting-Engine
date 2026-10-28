@@ -2,6 +2,8 @@
 
 #include <stdlib.h>
 
+#include "core/hash.h"
+
 static const pc_rgb k_hues[16] = {
     {255, 255, 255}, {230,  40,  40}, {240, 140,  30}, {240, 225,  50},
     {140, 220,  50}, { 40, 180,  60}, { 40, 170, 150}, { 60, 210, 230},
@@ -221,4 +223,18 @@ int pc_assets_init(pc_assets *as, pc_arena *arena)
         as->sprites[i].height = sprite_h[i];
     }
     return 0;
+}
+
+uint64_t pc_assets_hash(const pc_assets *as)
+{
+    uint64_t h = pc_hash64(as->palette, sizeof as->palette, PC_HASH_SEED);
+    h = pc_hash64(as->colormap, sizeof as->colormap, h);
+    for (int i = 0; i < PC_TEX_COUNT; i++)
+        h = pc_hash64(as->tex[i], PC_TEX_SIZE * PC_TEX_SIZE, h);
+    for (int i = 0; i < PC_SPRITE_COUNT; i++) {
+        h = pc_hash64(as->sprites[i].pix, PC_TEX_SIZE * PC_TEX_SIZE, h);
+        h = pc_hash64(&as->sprites[i].width, sizeof(fx_t), h);
+        h = pc_hash64(&as->sprites[i].height, sizeof(fx_t), h);
+    }
+    return h;
 }

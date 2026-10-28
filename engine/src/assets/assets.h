@@ -57,4 +57,8 @@ typedef struct {
 /* Everything is generated procedurally with integer math; returns 0 on success. */
 int pc_assets_init(pc_assets *as, pc_arena *arena);
 
+/* Hash of everything a frame can sample: palette, colormap, textures, sprites. A command
+ * dump records it so a replay can tell it is drawing with the same art. */
+uint64_t pc_assets_hash(const pc_assets *as);
+
 #endif

@@ -12,6 +12,8 @@
 #include "map/map.h"
 #include "render/fb.h"
 #include "render/raycast.h"
+#include "render/cmdbuf/cmdbuf.h"
+#include "render/backend.h"
 #include "render/sector.h"
 #include "render/post/present.h"
 #include "debug/automap.h"
